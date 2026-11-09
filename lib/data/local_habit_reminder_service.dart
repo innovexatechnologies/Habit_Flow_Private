@@ -48,13 +48,32 @@ class LocalHabitReminderService implements HabitReminderService {
   Future<void> initialize() async {
     if (_initialized) return;
     tz_data.initializeTimeZones();
-    final timezone = await FlutterTimezone.getLocalTimezone();
-    _location = tz.getLocation(timezone.identifier);
+    try {
+      final timezone = await FlutterTimezone.getLocalTimezone();
+      _location = tz.getLocation(timezone.identifier);
+    } catch (error) {
+      debugPrint('Habit reminder timezone setup failed: $error');
+      _location ??= tz.local;
+    }
     await _notifications.initialize(
       settings: const InitializationSettings(
         android: AndroidInitializationSettings('ic_notification'),
       ),
     );
+    final android = _androidPlugin;
+    if (android != null) {
+      await android.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _channelId,
+          'Habit reminders',
+          description:
+              'Optional reminders for habits you choose to be notified about.',
+          importance: Importance.max,
+          enableVibration: true,
+          playSound: true,
+        ),
+      );
+    }
     _initialized = true;
   }
 
@@ -105,22 +124,25 @@ class LocalHabitReminderService implements HabitReminderService {
       );
       await _notifications.zonedSchedule(
         id: _notificationId(habit.id, weekday),
-        title: habit.name,
-        body: 'A little time for your habit today.',
+        title: 'Time for your habit!',
+        body:
+            'It’s time to complete your ${habit.name}. Stay consistent and keep your streak alive!',
         scheduledDate: scheduledDate,
         notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
             'Habit reminders',
-            channelDescription:
-                'Optional reminders for habits you choose to be notified about.',
-            importance: Importance.defaultImportance,
-            priority: Priority.defaultPriority,
+            channelDescription: 'Optional reminders for habits you choose to be notified about.',
+            importance: Importance.max,
+            priority: Priority.max,
+            enableVibration: true,
+            playSound: true,
+            visibility: NotificationVisibility.public,
           ),
         ),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
-        payload: habit.id,
+        payload: 'habit:${habit.id}',
       );
     }
     return ReminderSyncStatus.scheduled;
@@ -147,15 +169,17 @@ class LocalHabitReminderService implements HabitReminderService {
 
   AndroidFlutterLocalNotificationsPlugin? get _androidPlugin {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return null;
-    return _notifications.resolvePlatformSpecificImplementation<
-      AndroidFlutterLocalNotificationsPlugin
-    >();
+    return _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
   }
 
   (int, int) _parseTime(String? time) {
     if (time == null) throw const FormatException('Reminder time is missing.');
     final parts = time.split(':');
-    if (parts.length != 2) throw FormatException('Invalid reminder time: $time');
+    if (parts.length != 2)
+      throw FormatException('Invalid reminder time: $time');
     final hour = int.tryParse(parts[0]);
     final minute = int.tryParse(parts[1]);
     if (hour == null || hour < 0 || hour > 23) {

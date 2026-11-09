@@ -60,7 +60,7 @@ class HomePage extends StatelessWidget {
     final total = summary.scheduledCount;
     final completed = summary.completedCount;
     final remaining = summary.remainingCount;
-    const greeting = 'Have a good day.';
+    const greeting = 'make today your own.';
 
     return AppPage(
       children: [
